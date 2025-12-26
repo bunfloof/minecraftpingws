@@ -95,6 +95,14 @@ enum ResponseData {
 struct Players {
     online: i32,
     max: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sample: Option<Vec<PlayerSample>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct PlayerSample {
+    name: String,
+    id: String,
 }
 
 struct SharedPingTask {
@@ -402,9 +410,23 @@ async fn run_shared_ping_task(
             Ok(data) => {
                 consecutive_errors = 0;
                 let latency = data.get("latency").and_then(|v| v.as_u64());
-                let players = data.get("players").map(|p| Players {
-                    online: p.get("online").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                    max: p.get("max").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                let players = data.get("players").map(|p| {
+                    let sample = p.get("sample").and_then(|s| s.as_array()).map(|arr| {
+                        arr.iter()
+                            .filter_map(|player| {
+                                Some(PlayerSample {
+                                    name: player.get("name")?.as_str()?.to_string(),
+                                    id: player.get("id")?.as_str()?.to_string(),
+                                })
+                            })
+                            .collect()
+                    });
+
+                    Players {
+                        online: p.get("online").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                        max: p.get("max").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                        sample,
+                    }
                 });
 
                 LatencyUpdate { server: server_str.clone(), latency, players, error: None }
